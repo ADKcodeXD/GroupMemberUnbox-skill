@@ -1,0 +1,22 @@
+{
+  "context_window": 2,
+  "chunk_size": 100000,
+  "sample_limit": 10000,
+  "sample_enabled": true,
+  "only_target": false,
+  "map_workers": 5,
+  "reduce_workers": 4,
+  "skill_workers": 6,
+  "rate_limit_calls": 30,
+  "rate_limit_period": 60,
+  "api_key": "YOUR_API_KEY_HERE",
+  "api_base": "https://openrouter.ai/api/v1",
+  "api_preset": "OpenRouter",
+  "model": "google/gemini-2.0-flash-001",
+  "temperature": 0.2,
+  "max_tokens": 8192,
+  "request_timeout": 120,
+  "max_retries": 2,
+  "price_per_m_input": 0.1,
+  "price_per_m_output": 0.4
+}
