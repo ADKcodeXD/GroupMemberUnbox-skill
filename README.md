@@ -6,6 +6,44 @@
 ![PyQt5](https://img.shields.io/badge/UI-PyQt5-orange?style=for-the-badge)
 ![License](https://img.shields.io/badge/License-MIT-red?style=for-the-badge)
 
+<img width="1886" height="1050" alt="image" src="https://github.com/user-attachments/assets/bd23610e-bdf4-491c-a9aa-ed248a712800" />
+
+## 📖 操作指南
+
+### 1. 准备数据 (联动 QQ Chat Exporter)
+本项目目前无法直接连接 QQ，需配合 [shuakami/qq-chat-exporter](https://github.com/shuakami/qq-chat-exporter) 等工具：
+1. 使用 **QQ Chat Exporter** 将聊天记录导出为一份或多份 **JSON** 格式文件。
+2. 确保 JSON 文件中包含 `uin` (QQ号)、`sender` (发送者名) 和 `content` (内容) 字段（此为标配格式）。
+
+### 2. 环境准备
+确保安装了 Python 3.10+ 以及相关依赖：
+```bash
+pip install -r requirements.txt
+```
+
+### 3. 启动程序
+运行主图形界面：
+```bash
+python profiler_gui.py
+```
+
+### 3. 配置 API
+点击界面上的 **“高级设置”** 或在主窗口填入：
+-   **API Base**: 支持 OpenAI 格式的镜像站或原站。
+-   **API Key**: 需开启模型访问。
+-   **推荐模型**: `gemini-3.1-flash-lite-preview`。
+
+### 4. 开始蒸馏
+1.  **选择文件**：导入从 QQ 群导出的消息 JSON 文件。
+2.  **锁定目标**：填入目标群友的 QQ 号（UIN）。
+3.  **模式选择**：
+    *   **智能抽样**：适合百万级海量记录，平衡成本与效果。
+    *   **Agent 深度审计**：若追求极致还原度，请开启此项（耗时较长）。
+4.  **点击启动**：在右侧你可以实时看到 AI 正在“阅读”和“思考”该群友的一举一动。
+
+---
+
+
 ## 🌟 项目简介
 
 **群友复制机** 是一款基于 **LangGraph** 状态机架构的深度人格分析与数字生命蒸馏工具。它能从海量的 QQ 聊天记录（JSON 格式）中，利用 **MapReduce** 并行分析算法，精准捕捉目标人物的行为逻辑、社交心理、话语体系及核心记忆，并将其“蒸馏”为符合 `immortal-skill` 规范的数字灵魂包。
@@ -46,41 +84,6 @@ graph TD
 -   **双通道提取**：独立提取“事实证据”与“性格风味”，解决传统 AI 分析容易丢失细节的问题。
 -   **Reflexion 对抗审计**：内置审计 Agent 模拟“挑剔的人类视角”，确保每一份证据都有据可查。
 -   **断点续传系统**：基于 JSON 持久化的分析状态机，支持中途停止、跨天恢复，不浪费一点 Token。
-
----
-
-## 📖 操作指南
-
-### 1. 准备数据 (联动 QQ Chat Exporter)
-本项目目前无法直接连接 QQ，需配合 [shuakami/qq-chat-exporter](https://github.com/shuakami/qq-chat-exporter) 等工具：
-1. 使用 **QQ Chat Exporter** 将聊天记录导出为一份或多份 **JSON** 格式文件。
-2. 确保 JSON 文件中包含 `uin` (QQ号)、`sender` (发送者名) 和 `content` (内容) 字段（此为标配格式）。
-
-### 2. 环境准备
-确保安装了 Python 3.10+ 以及相关依赖：
-```bash
-pip install -r requirements.txt
-```
-
-### 3. 启动程序
-运行主图形界面：
-```bash
-python profiler_gui.py
-```
-
-### 3. 配置 API
-点击界面上的 **“高级设置”** 或在主窗口填入：
--   **API Base**: 支持 OpenAI 格式的镜像站或原站。
--   **API Key**: 需开启模型访问。
--   **推荐模型**: `gemini-1.5-pro`, `claude-3-5-sonnet`, `gpt-4o`。
-
-### 4. 开始蒸馏
-1.  **选择文件**：导入从 QQ 群导出的消息 JSON 文件。
-2.  **锁定目标**：填入目标群友的 QQ 号（UIN）。
-3.  **模式选择**：
-    *   **智能抽样**：适合百万级海量记录，平衡成本与效果。
-    *   **Agent 深度审计**：若追求极致还原度，请开启此项（耗时较长）。
-4.  **点击启动**：在右侧你可以实时看到 AI 正在“阅读”和“思考”该群友的一举一动。
 
 ---
 
