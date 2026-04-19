@@ -1,4 +1,5 @@
 import os
+import json
 import concurrent.futures
 from ..state import AgentState
 from ..utils import read_prompt, call_ai, RateLimiter
@@ -32,11 +33,32 @@ def reduce_node(state: AgentState) -> dict:
     prompt_literary = read_prompt("prompt_literary.md").format(evidence_base=evidence_base, high_value_highlights=high_value_highlights, target_uin=target_uin)
     prompt_profiling = read_prompt("prompt_profiling.md").format(evidence_base=evidence_base, high_value_highlights=high_value_highlights, target_uin=target_uin)
     
+    word_freq_text = json.dumps(state.get("word_frequency", []), ensure_ascii=False)
+    prompt_style = f"""
+依据以下全景证据库中关于【说话风格】、以及【词频统计数据】，生成一份详细的【说话风格指南 (Speaking Style Guide)】。
+
+【词频统计参考】：
+{word_freq_text}
+
+【全景证据库 - 语言指纹部分】：
+{evidence_base}
+
+【高价值对话原话】：
+{high_value_highlights}
+
+任务要求：
+1. 提炼核心口头禅与高频黑话。
+2. 分析句式特点：如长短句分布、标点习惯（如是否习惯不用标点）、表情包/语气词的使用偏好。
+3. 总结交互气味：是温和、丧气、暴躁还是逻辑精英？
+4. 提供 3 条用于 System Prompt 的风格指令，教导 AI 如何模拟此人说话。
+"""
+
     reduce_tasks = {
         "resume":    (prompt_resume,    system_reduce_base),
         "analysis":  (prompt_analysis,  system_reduce_base),
         "literary":  (prompt_literary,   system_reduce_base),
         "profiling": (prompt_profiling,  system_profiling),
+        "style":     (prompt_style,      system_profiling),
     }
     
     reduce_results = {}
@@ -57,10 +79,10 @@ def reduce_node(state: AgentState) -> dict:
             
     completed_modules = len(reduce_results)
     if "progress" in cb:
-        p = 75 + int((completed_modules / 4) * 10)
-        cb["progress"](p, f"正在生成终极档案... ({completed_modules}/4)")
+        p = 75 + int((completed_modules / 5) * 10)
+        cb["progress"](p, f"正在生成终极档案... ({completed_modules}/5)")
             
-    combined_report = f"# 人物档案总报告\n\n---\n\n# 📋 模块一：人物简历档案\n\n{reduce_results.get('resume', '')}\n\n---\n\n# 🔬 模块二：深度解剖报告\n\n{reduce_results.get('analysis', '')}\n\n---\n\n# 📖 模块三：文学叙事\n\n{reduce_results.get('literary', '')}\n\n---\n\n# 🧠 模块四：终极侧写报告\n\n{reduce_results.get('profiling', '')}"
+    combined_report = f"# 人物档案总报告\n\n---\n\n# 📋 模块一：人物简历档案\n\n{reduce_results.get('resume', '')}\n\n---\n\n# 🔬 模块二：深度解剖报告\n\n{reduce_results.get('analysis', '')}\n\n---\n\n# 📖 模块三：文学叙事\n\n{reduce_results.get('literary', '')}\n\n---\n\n# 🧠 模块四：终极侧写报告\n\n{reduce_results.get('profiling', '')}\n\n---\n\n# 🗣️ 模块五：说话风格指南\n\n{reduce_results.get('style', '')}"
 
     with open(os.path.join(state["session_log_dir"], "00_final_report.md"), "w", encoding="utf-8") as f:
         f.write(combined_report)

@@ -210,6 +210,9 @@
 
 ---
 
+【词频统计参考】：
+{word_frequency}
+
 【目标人物QQ号】：{target_uin}
 
 分段提取结果如下：

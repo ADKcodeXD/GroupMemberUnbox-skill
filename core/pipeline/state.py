@@ -36,4 +36,7 @@ class AgentState(TypedDict):
     progress: int
     session_log_dir: str
     audit_count: int
+    tool_count: int  # 记录工具调用次数，防止无限循环
+    search_query: Optional[str]
+    search_results: Optional[str]
     error: Optional[str]
