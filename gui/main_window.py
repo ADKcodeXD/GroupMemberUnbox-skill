@@ -17,7 +17,7 @@ from .styles import DARK_THEME_CSS, REPORT_HTML_STYLE
 class ProfilerApp(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("AI Profiler v3.0 - MapReduce 深度侧写系统")
+        self.setWindowTitle("群友炼化机")
         self.resize(1500, 900)
         self.selected_files = []
         self.config = load_config()
@@ -41,7 +41,7 @@ class ProfilerApp(QMainWindow):
         left_layout.setContentsMargins(10, 10, 15, 10)
         left_layout.setSpacing(12)
         
-        lbl_title = QLabel("👁️ AI Profiler 控制台")
+        lbl_title = QLabel("🔥 群友炼化控制台")
         lbl_title.setObjectName("title")
         left_layout.addWidget(lbl_title)
         
@@ -106,7 +106,7 @@ class ProfilerApp(QMainWindow):
         self.btn_settings.clicked.connect(self.open_settings)
         left_layout.addWidget(self.btn_settings)
         
-        self.btn_start = QPushButton("🚀 启动 Map-Reduce 侧写")
+        self.btn_start = QPushButton("顷刻炼化")
         self.btn_start.clicked.connect(self.start_analysis)
         left_layout.addWidget(self.btn_start)
         
@@ -462,7 +462,7 @@ class ProfilerApp(QMainWindow):
         self.btn_start.setEnabled(False)
         self.btn_stop.setEnabled(True)
         self.progress_bar.setValue(0)
-        self.report_browser.setHtml(REPORT_HTML_STYLE + "<h2 style='text-align:center; margin-top:200px;'>🚀 引擎已启动...</h2>")
+        self.report_browser.setHtml(REPORT_HTML_STYLE + "<h2 style='text-align:center; margin-top:200px;'>🔥 正在炼化...</h2>")
         self.raw_preview_browser.clear()
         self.stage_browser.clear()
         self.resume_browser.clear()
