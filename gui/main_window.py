@@ -488,6 +488,11 @@ class ProfilerApp(QMainWindow):
             self.raw_preview_browser.setPlainText(content)
             return
         
+        if stage_name == "extract_stats":
+            html = markdown.markdown(content)
+            self.stage_browser.append(f"<hr>{html}")
+            return
+        
         if stage_name == "evidence_base":
             html = markdown.markdown(content)
             self.stage_browser.append(f"<hr><h3 style='color:#a6e3a1;'>📦 全景证据库已生成</h3>{html}")

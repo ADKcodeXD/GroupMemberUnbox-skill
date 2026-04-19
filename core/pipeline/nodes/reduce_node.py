@@ -33,11 +33,22 @@ def reduce_node(state: AgentState) -> dict:
     prompt_literary = read_prompt("prompt_literary.md").format(evidence_base=evidence_base, high_value_highlights=high_value_highlights, target_uin=target_uin)
     prompt_profiling = read_prompt("prompt_profiling.md").format(evidence_base=evidence_base, high_value_highlights=high_value_highlights, target_uin=target_uin)
     
-    word_freq_text = json.dumps(state.get("word_frequency", []), ensure_ascii=False)
-    prompt_style = f"""
-依据以下全景证据库中关于【说话风格】、以及【词频统计数据】，生成一份详细的【说话风格指南 (Speaking Style Guide)】。
+    # 格式化语言指纹报告
+    wf = state.get("word_frequency", {})
+    if isinstance(wf, dict):
+        kw_list = [f"{k['word']}(权重:{k['weight']})" for k in wf.get("top_keywords", [])]
+        pt_list = [f"{p['word']}(频次:{p['count']})" for p in wf.get("modal_particles", [])]
+        word_freq_text = (
+            f"【1. 高权特征词 (TF-IDF)】: {', '.join(kw_list[:40])}\n"
+            f"【2. 语气助词偏向 (语感指纹)】: {', '.join(pt_list)}"
+        )
+    else:
+        word_freq_text = str(wf)
 
-【词频统计参考】：
+    prompt_style = f"""
+依据以下全景证据库中关于【说话风格】、以及【深度语言指纹数据】，进行“神魂级别”的语感建模，生成【说话风格指南 (Speaking Style Guide)】。
+
+【深度语言指纹统计】：
 {word_freq_text}
 
 【全景证据库 - 语言指纹部分】：

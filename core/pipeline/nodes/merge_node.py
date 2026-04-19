@@ -18,7 +18,18 @@ def merge_node(state: AgentState) -> dict:
     
     system_merge = read_prompt("system_merge.md")
     prompt_merge_tpl = read_prompt("prompt_merge.md")
-    word_freq_text = json.dumps(state.get("word_frequency", []), ensure_ascii=False)
+    # 格式化语言指纹报告，使其对 AI 更具启发性
+    wf = state.get("word_frequency", {})
+    if isinstance(wf, dict):
+        kw_list = [f"{k['word']}(权重:{k['weight']})" for k in wf.get("top_keywords", [])]
+        pt_list = [f"{p['word']}(频次:{p['count']})" for p in wf.get("modal_particles", [])]
+        word_freq_text = (
+            f"【1. 高权值特征词 (TF-IDF)】: {', '.join(kw_list[:30])}\n"
+            f"【2. 语气助词偏向 (语感指纹)】: {', '.join(pt_list)}"
+        )
+    else:
+        word_freq_text = str(wf)
+
     prompt_merge = prompt_merge_tpl.format(
         raw_map_text=raw_map_text, 
         target_uin=state["target_uin"],
