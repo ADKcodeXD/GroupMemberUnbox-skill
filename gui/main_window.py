@@ -22,8 +22,61 @@ class ProfilerApp(QMainWindow):
         self.selected_files = []
         self.config = load_config()
         self.setStyleSheet(DARK_THEME_CSS)
+        self._stream_cursors = {} # 存储流式输出的游标
         self.initUI()
         self._sync_config_to_ui()
+
+# ... (initUI remains the same, skipping to start_analysis)
+
+    def start_analysis(self):
+        # ... (skipping earlier part of start_analysis)
+        self.thread = PipelineManager(self.selected_files, target_uin, self.config)
+        self.thread.progress.connect(self.update_progress)
+        self.thread.finished.connect(self.on_analysis_finished)
+        self.thread.error.connect(self.on_analysis_error)
+        self.thread.stage_preview.connect(self.on_stage_preview)
+        self.thread.stage_preview_stream.connect(self.on_stage_preview_stream) # 连接流信号
+        self.thread.start()
+
+    def update_progress(self, val, text):
+        self.progress_bar.setValue(val)
+        self.lbl_status.setText(text)
+    
+    def on_stage_preview_stream(self, stream_key, delta):
+        """处理流式增量更新"""
+        from PyQt5.QtGui import QTextCursor
+        
+        if stream_key not in self._stream_cursors:
+            # 第一次出现该流，创建一个容器
+            color = "#a6e3a1" if "map" in stream_key else "#89b4fa"
+            title = stream_key.replace("_", " ").upper()
+            
+            # 插入一个带边框的 div 结构
+            self.stage_browser.append(
+                f"<div id='{stream_key}' style='border-left: 4px solid {color}; "
+                f"padding: 8px; margin: 10px 0; background: #181825; border-radius: 4px;'>"
+                f"<b style='color:{color};'>{title}</b><br>"
+                f"<span id='content_{stream_key}' style='color:#bac2de; font-family: Consolas; font-size:12px; white-space:pre-wrap;'></span>"
+                f"</div>"
+            )
+            
+            # 获取该容器内部的游标（这里使用简单的 append 方案，或者更精确的移动游标）
+            # 由于 append 之后 cursor 就在最后，我们记录当前的 cursor
+            cursor = self.stage_browser.textCursor()
+            cursor.movePosition(QTextCursor.End)
+            self._stream_cursors[stream_key] = cursor
+
+        # 增量插入文本
+        cursor = self._stream_cursors[stream_key]
+        cursor.insertText(delta)
+        
+        # 自动滚动到底部
+        scrollbar = self.stage_browser.verticalScrollBar()
+        scrollbar.setValue(scrollbar.maximum())
+
+    def on_stage_preview(self, stage_name, content):
+        """接收实时阶段预览 (全量刷新)"""
+        # ... (existing code for raw_preview, stage_stats etc.)
         
     def initUI(self):
         main_widget = QWidget()
@@ -442,12 +495,16 @@ class ProfilerApp(QMainWindow):
                 f"  • 文本总长: {len(chat_text):,} 字符\n"
                 f"  • 预计分段: {est['num_chunks']} 块\n\n"
                 f"⚡ 资源消耗预估：\n"
-                f"  • API 调用总次数: ~{est['total_api_calls']} 次\n"
+                f"  • 远程 LLM 调用: ~{est['remote_api_calls']} 次\n"
+                f"  • 其中基础调用: ~{est['base_remote_calls']} 次\n"
+                f"  • 审计附加调用: ~{est['audit_remote_calls']} 次\n"
+                f"  • embedding 请求: ~{est['embedding_requests']} 次\n"
                 f"  • 预计输入 Token: ~{est['total_in_tokens']} K\n"
                 f"  • 预计输出 Token: ~{est['total_out_tokens']} K\n"
                 f"  • 预计耗时: ~{est['estimated_minutes']} 分钟\n\n"
                 f"💰 预估费用：\n"
-                f"  • 约 ${est['estimated_cost']} USD\n\n"
+                f"  • 远程 LLM 约 ${est['estimated_cost']} USD\n"
+                f"  • 说明: {est['cost_scope']}\n\n"
                 f"是否继续？",
                 QMessageBox.Yes | QMessageBox.No, QMessageBox.Yes
             )

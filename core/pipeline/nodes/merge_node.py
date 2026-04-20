@@ -3,6 +3,7 @@ import json
 import re
 from ..state import AgentState
 from ..utils import read_prompt, call_ai, RateLimiter
+from ...retrieval.semantic_retrieve import semantic_retrieve, save_retrieval_json
 
 def merge_node(state: AgentState) -> dict:
     """初始叠加汇总节点"""
@@ -52,39 +53,59 @@ def merge_node(state: AgentState) -> dict:
     }
 
 def retrieve_node(state: AgentState) -> dict:
-    """检索工具节点: 在原始聊天记录中搜索关键词"""
+    """检索工具节点: 优先语义检索，失败时回退到字符串搜索"""
     query = state.get("search_query")
     if not query:
         return {"search_results": "【错误】：未提供搜索关键词。"}
-    
-    chat_text = state.get("chat_text", "")
-    lines = chat_text.split("\n")
-    results = []
-    
-    # 限制检索结果数量
-    max_hits = 10
-    window = 5 # 上下文行数
-    
-    try:
-        pattern = re.compile(query, re.IGNORECASE)
-    except Exception as e:
-        return {"search_results": f"【错误】：正则表达式语法错误 - {e}"}
-        
-    hit_count = 0
-    for i, line in enumerate(lines):
-        if pattern.search(line):
-            hit_count += 1
-            start = max(0, i - window)
-            end = min(len(lines), i + window + 1)
-            context = "\n".join(lines[start:end])
-            results.append(f"--- 搜索命中 {hit_count} (行 {i+1}) ---\n{context}")
-            if hit_count >= max_hits: break
-            
-    res_text = "\n\n".join(results) if results else "【未找到匹配项】。"
-    
+
+    res_text = ""
+    semantic_hits = []
+    semantic_enabled = state["config"].get("semantic_retrieval_enabled", True)
+    if semantic_enabled:
+        try:
+            semantic_hits, res_text = semantic_retrieve(
+                query=query,
+                message_index_path=state.get("message_index_path", ""),
+                embedding_path=state.get("message_embedding_path", ""),
+                config=state["config"],
+                top_k=state["config"].get("semantic_retrieval_top_k", 8),
+                target_only=True,
+            )
+        except Exception as e:
+            res_text = f"【语义检索失败，准备回退字符串搜索】：{e}"
+
+    # 回退：原始字符串搜索
+    if not semantic_hits:
+        chat_text = state.get("chat_text", "")
+        lines = chat_text.split("\n")
+        results = []
+        max_hits = 10
+        window = 5
+        try:
+            pattern = re.compile(query, re.IGNORECASE)
+        except Exception as e:
+            return {"search_results": f"【错误】：正则表达式语法错误 - {e}"}
+
+        hit_count = 0
+        for i, line in enumerate(lines):
+            if pattern.search(line):
+                hit_count += 1
+                start = max(0, i - window)
+                end = min(len(lines), i + window + 1)
+                context = "\n".join(lines[start:end])
+                results.append(f"--- 字符串命中 {hit_count} (行 {i+1}) ---\n{context}")
+                if hit_count >= max_hits:
+                    break
+        res_text = "\n\n".join(results) if results else "【未找到匹配项】。"
+
     # 将结果保存到日志
     with open(os.path.join(state["session_log_dir"], f"search_{state['tool_count']}.md"), "w", encoding="utf-8") as f:
         f.write(f"Query: {query}\n\nResults:\n{res_text}")
+    if semantic_hits:
+        save_retrieval_json(
+            semantic_hits,
+            os.path.join(state["session_log_dir"], f"search_{state['tool_count']}.json")
+        )
         
     return {
         "search_results": res_text,
@@ -133,7 +154,7 @@ def audit_node(state: AgentState) -> dict:
 
 ---
 指令：
-1. 如果你需要搜索具体的原始聊天证据（如具体的日期、QQ号提及的内容、特定的词汇），请在回复中包含 `[SEARCH: 你的关键词或正则]` 标签。
+1. 如果你需要搜索具体的原始聊天证据（如具体的日期、目标人物提及的内容、特定的词汇），请在回复中包含 `[SEARCH: 你的关键词或正则]` 标签。
 2. 如果指出证据库中的漏洞，请列出具体的修改意见。
 3. 如果认为已经足够完善，请务必在开头回复“【审计通过】”。
 """

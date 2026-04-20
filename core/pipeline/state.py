@@ -24,7 +24,12 @@ class AgentState(TypedDict):
     # Reduce 结果
     reduce_results: Dict[str, str]
     combined_report: str
-    
+    word_frequency: Dict[str, Any]
+    message_index_path: str
+    message_embedding_path: str
+    highlight_candidates_path: str
+    local_embedding_error: Optional[str]
+
     # Skill 结果
     skill_dir: Optional[str]
     

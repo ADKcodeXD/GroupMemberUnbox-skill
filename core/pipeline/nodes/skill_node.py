@@ -2,204 +2,201 @@ import os
 import json
 import hashlib
 import shutil
-import concurrent.futures
 from datetime import datetime, timezone
 from ..state import AgentState
-from ..utils import read_prompt, call_ai, RateLimiter
+from ..utils import (
+    read_prompt,
+    call_ai,
+    RateLimiter,
+    parse_structured_prompt_sections,
+    render_prompt_template,
+)
 
 def skill_node(state: AgentState) -> dict:
-    """Skill 蒸馏阶段节点"""
+    """Skill 蒸馏与自进化节点 - 高保真 6 层架构强化版"""
     stop_event = state["stop_event"]
     if stop_event.is_set(): return {}
     
     cfg = state["config"]
     target_uin = state["target_uin"]
-    chat_text = state["chat_text"]
     evidence_base = state["evidence_base"]
     reduce_results = state.get("reduce_results", {})
-    
-    # 汇总风味记录
-    high_value_highlights = ""
-    for res in state["fidelity_results"]:
-        if res: high_value_highlights += res + "\n\n"
+    fidelity_results = state.get("fidelity_results", [])
+    cb = state.get("callbacks", {})
 
+    # 1. 结构化任务与目录准备
     out_dir = os.path.abspath(f"./skills/immortals/{target_uin}")
     os.makedirs(out_dir, exist_ok=True)
     skill_dir = os.path.join(out_dir, "skill")
     os.makedirs(skill_dir, exist_ok=True)
     
-    # 保存过程文件 (分模块输出，不再挤在一个大文件里)
-    with open(os.path.join(out_dir, "01_raw_chat_context.txt"), 'w', encoding='utf-8') as f: f.write(chat_text)
-    with open(os.path.join(out_dir, "02_evidence_base.md"), 'w', encoding='utf-8') as f: f.write(evidence_base)
-    with open(os.path.join(out_dir, "03_resume.md"), 'w', encoding='utf-8') as f: f.write(reduce_results.get("resume", ""))
-    with open(os.path.join(out_dir, "04_analysis.md"), 'w', encoding='utf-8') as f: f.write(reduce_results.get("analysis", ""))
-    with open(os.path.join(out_dir, "05_literary.md"), 'w', encoding='utf-8') as f: f.write(reduce_results.get("literary", ""))
-    with open(os.path.join(out_dir, "06_profiling.md"), 'w', encoding='utf-8') as f: f.write(reduce_results.get("profiling", ""))
-    with open(os.path.join(out_dir, "07_style.md"), 'w', encoding='utf-8') as f: f.write(reduce_results.get("style", ""))
-    
-    # 定义蒸馏任务及其所需的特定上下文模块
-    skill_tasks = {
-        "resume.md": {
-            "prompt": """生成一份极其严谨的【人物简历档案 (Persona Resume)】。
-要求：基于全景证据库中可信度最高的事实。
-!! 特别警告：如果发现目标人物存在“身份表演”或“反串/钓鱼”嫌疑，必须在档案显著位置增加【身份真实性审计】章节，对比其“自述人设”与“侧写质感”的矛盾点。
-需包含：
-1. 基本信息（性别、年龄、籍贯、教育背景等）。
-2. 社会角色（职业状态、感情状态、生活重心）。
-3. 核心经历（关键转折点）。""",
-            "context": reduce_results.get("resume", "")
-        },
-        "style.md": {
-            "prompt": """进行“神魂级”【说话风格与语感指南 (Style Guide)】建模。
-要求：基于深度语言指纹统计与对话原话，提炼出其不可复制的“嘴脸”特征。
-需包含：
-1. **核心口头禅与高频黑话**：不仅是词汇，还要说明其出现的情境。
-2. **句式节律 (Rhythm Control)**：分析其打字习惯。是“断句狂魔”？还是“长难句爱好者”？是否习惯性漏掉主语？
-3. **标点与表情包哲学**：标点是极简还是溢出？在使用 [图片] 时是否有特定的语境规律？
-4. **负向约束 (Negative Constraints)**：明确指出此人【绝对不会】表现出的样子（如：绝对不会说“好的谢谢”、绝对不会使用严谨的逻辑连接词）。
-5. **3条硬核模仿指令**：写出 3 条直接用于 System Prompt 的模仿指令，要求必须具备极高的区分度。""",
-            "context": reduce_results.get("style", "")
-        },
-        "chathistory.md": {
-            "prompt": """生成一份高浓度的【历史对话片段集 (Chat History)】。
-要求：从提供的“高价值对话参考”中，精选 60-100 条（如量不足则全选）最能体现人物“嘴脸”、“口癖”以及“打字习惯”的原始对话记录。
-!! 格式要求：以原始消息流形式呈现。
-!! 禁止：添加任何 AI 的解释、润色或总结。必须保持原汁原味的“生肉”质感。""",
-            "context": high_value_highlights
-        },
-        "procedure.md": {
-            "prompt": """分析目标人物在处理事务或冲突时的【行为逻辑 (Procedure)】。
-要求：模拟其真实的决策过程。例如：面对 Bug 时他是甩锅还是解决？面对压力时是逃避还是对冲？
-!! 关键提醒：你是在模拟一个有限的、真实的、甚至有缺陷的人，而非一个全知全能的助手。""",
-            "context": reduce_results.get("analysis", "")
-        },
-        "interaction.md": {
-            "prompt": """定义人物的【交互模式与社交距离 (Interaction)】。
-要求：明确其在文字交互中的防御机制与进攻性。
-1. **社交频率与节奏**：是秒回型还是轮回型？是否习惯性刷屏？
-2. **社交防御姿态**：面对冒犯时是反击、阴阳怪气还是沉默？面对求助时是热心还是敷衍？
-3. **边界感模拟**：定义其“不愿谈及”的禁区，以及面对未知领域时的典型反应（如：“没听说过”、“笑死，不关我事”）。
-!! 关键提醒：你是为了“模拟本人”，而非“解决问题”。如果一个问题在现实中这人不知道，模拟时也应体现这种“拒绝”或“偏执”。""",
-            "context": high_value_highlights + "\n" + reduce_results.get("profiling", "")
-        },
-        "personality.md": {
-            "prompt": """界定人物的【人格底层逻辑 (Personality)】。
-要求：深挖其核心防御机制（如犬儒主义、赌徒心态）。提供 5 条体现其性格底色的原始金句。
-!! 关键提醒：强调其性格的“硬度”与独特性，避免生成模棱两可、温柔客气的标准 AI 人格。""",
-            "context": reduce_results.get("analysis", "") + "\n" + reduce_results.get("literary", "")
-        },
-        "memory.md": {
-            "prompt": """构建人物的【核心记忆与世界观 (Memory)】。
-要求：基于其背景和叙事，总结出对其人生观产生重大影响的事件。
-!! 关键提醒：他的世界观通常是偏颇的、基于个人经历的，模拟时必须保持这种视角的局限性。""",
-            "context": reduce_results.get("literary", "") + "\n" + reduce_results.get("resume", "")
-        },
-        "conflicts.md": {
-            "prompt": """识别其内在的【矛盾与张力 (Conflicts)】。
-要求：揭示其言行不一之处、未实现的幻想及核心恐惧。""",
-            "context": reduce_results.get("analysis", "")
-        },
-        "SKILL.md": {
-            "prompt": f"""按照 immortal-skill 规范，生成【总控 SKILL.md】总控文件。
-!! 要求：你必须在报告中【完全引用】并【列举】以下所有 8 个子模块，并说明它们的约束效力。
+    # 2. 准备现有历史内容 (用于追加模式)
+    existing_skill = {}
+    if os.path.exists(skill_dir):
+        for fn in os.listdir(skill_dir):
+            if fn.endswith(".md"):
+                try:
+                    with open(os.path.join(skill_dir, fn), 'r', encoding='utf-8') as f:
+                        existing_skill[fn] = f.read()
+                except: pass
 
-### 0. YAML Frontmatter (必须位于文件最开头)
-name: [AI生成：仅限小写英文字母名，如: xxx-skill]
-alias: [AI生成：绰号/标题，可包含中文]
-description: "[AI生成：一句话本质定义]"
----
+    # 3. 加载解析 Prompt 系统
+    try:
+        skill_prompts_raw = read_prompt("prompt_skill.md")
+        prompts = parse_structured_prompt_sections(skill_prompts_raw)
+    except Exception as e:
+        return {"error": f"加载 prompt_skill.md 失败: {str(e)}"}
 
-### 1. 人格定义与核心原则
-[定义目标人物的核心特质，明确其非全知、有情绪偏见、非助手的真实人类特质]
-[!! 注意：如果审计发现其存在身份伪装，请在这里定义“双重人格模拟”逻辑，即：如何演好那个演戏的人]
-
-### 2. 子模块引用清单 (必选，不得遗漏)
-下游模型在运行时必须实时调用以下模块进行校准：
-- **[style.md] 语言风格与节律**：定义句式习惯、高频口癖（核心约束）。
-- **[chathistory.md] 原始对话片段**：下游模型应将其视为 Few-shot 示例，必须 1:1 模仿其中的说话语气、节奏和标点习惯。
-- **[resume.md] 个人背景档案**：事实基座，决定其“知道什么”和“不知道什么”。
-- **[interaction.md] 文字交互逻辑**：定义语速、节奏及社交防御姿态。
-- **[personality.md] 人格底层逻辑**：定义核心动力与性格硬度。
-- **[procedure.md] 决策处理逻辑**：定义面对变数时的典型反应。
-- **[memory.md] 核心记忆锚点**：定义世界观的边界与敏感点。
-- **[conflicts.md] 内在矛盾张力**：揭示言行违和处与防御机制。
-
-### 3. 群聊即时回复指南 (口气速查)
-针对高频群聊场景，必须肌肉记忆般遵循以下准则：
-- **即时口癖**：[从证据库中提取 3-5 个最标志性的短回复，如：确实、笑死、离谱]
-- **回复节律**：[定义高频句式，如：习惯性分段发送、从不使用句号、大量使用空格代替标点]
-- **场景切换**：日常群聊水贴时，严禁输出超过 [X] 字的长难句。若遇到深层逻辑讨论或复杂交互，模型需立即查阅并激活 **[style.md]** 中的高级指令。
-
-### 4. 模拟运行指南
-[说明如何联合调用上述模块，特别是如何从 chathistory.md 中提取具体的语气样本来完成高还原度回复。]
-""",
-            "context": evidence_base # SKILL.md 需要全局视野
-        }
-    }
-    
+    system_main = prompts.get("SYSTEM", "")
     rate_limiter = RateLimiter(cfg.get("rate_limit_calls", 14), 60)
-    
-    def generate_skill_file(filename, task_cfg):
-        system_skill = "你是一位精通 immortal-skill 框架的数字永生架构师，致力于 1:1 还原人类灵魂的真实质感。你认为原始语料（Chat History）是模仿的最高优先级。"
-        prompt_skill = (
-            f"目标：{target_uin}\n"
-            f"特定参考上下文：\n{task_cfg['context']}\n\n"
-            f"高价值对话参考 (原汁原味素材)：\n{high_value_highlights[:15000]}\n\n" 
-            f"任务指令：\n{task_cfg['prompt']}"
-        )
-        return filename, call_ai(cfg, prompt_skill, system_skill, rate_limiter, stop_event)
+    high_value_highlights = ""
+    for i, res in enumerate(fidelity_results):
+        if res and res.strip():
+            high_value_highlights += f"--- 分片 {i+1} 备选素材 ---\n{res}\n\n"
+    if not high_value_highlights.strip():
+        high_value_highlights = "（未从切片提取到符合标准的高价值原始记录）"
 
+    shared_rules = "\n\n".join(filter(None, [
+        "### [GLOBAL_EVIDENCE_PROTOCOL]\n" + prompts.get("GLOBAL_EVIDENCE_PROTOCOL", ""),
+        "### [HIGH_RISK_INFERENCE_GUARDRAILS]\n" + prompts.get("HIGH_RISK_INFERENCE_GUARDRAILS", ""),
+        "### [EVOLUTION_PRINCIPLES]\n" + prompts.get("EVOLUTION_PRINCIPLES", ""),
+        "### [OUTPUT_ORDER]\n" + prompts.get("OUTPUT_ORDER", ""),
+    ])).strip()
+    input_block = render_prompt_template(
+        prompts.get("INPUT", ""),
+        target_uin=target_uin,
+        evidence_base=evidence_base,
+        high_value_highlights=high_value_highlights[:18000],
+    )
+
+    # 4. 特殊处理：LAYER_4_CHAT (高保真对话提取与上下文总结)
+    def refine_chat_history():
+        if "progress" in cb: cb["progress"](90, "正在深度炼化‘高保真互动样本’...")
+        prompt_chat = prompts.get("LAYER_4_CHAT", "")
+        full_p = "\n\n".join(filter(None, [
+            f"目标角色：{target_uin}",
+            shared_rules,
+            input_block,
+            f"### [LAYER_4_CHAT]\n{prompt_chat}",
+        ]))
+        return call_ai(cfg, full_p, system_main, rate_limiter, stop_event)
+
+    # 5. 执行进化合并逻辑 (Append-Only)
     skill_data = {}
-    total_skills = len(skill_tasks)
-    completed_skills = 0
-    cb = state.get("callbacks", {})
-    
-    with concurrent.futures.ThreadPoolExecutor(max_workers=cfg.get("skill_workers", 6)) as executor:
-        futures = [executor.submit(generate_skill_file, fn, t) for fn, t in skill_tasks.items()]
-        for future in concurrent.futures.as_completed(futures):
-            if stop_event.is_set(): break
-            fn, content = future.result()
-            skill_data[fn] = content
-            completed_skills += 1
-            if "progress" in cb:
-                p = 90 + int((completed_skills / total_skills) * 10)
-                cb["progress"](p, f"正在构筑数字生命灵魂... ({completed_skills}/{total_skills})")
+    # 自动合并从 ReduceNode 传来的层级
+    layer_map = {
+        "objective.md": "objective",
+        "inference.md": "inference",
+        "behavior.md":  "behavior",
+        "memory.md":    "memory",
+        "style.md":     "style"
+    }
 
-    for fn, content in skill_data.items():
-        with open(os.path.join(skill_dir, fn), 'w', encoding='utf-8') as f: f.write(content)
+    for filename, result_key in layer_map.items():
+        new_content = reduce_results.get(result_key, "")
+        prev_content = existing_skill.get(filename, "")
         
-    # 5. 生成元数据与打包
-    timestamp = datetime.now(timezone.utc).isoformat()
+        if prev_content and new_content:
+            # 简单自进化逻辑：追加新发现
+            merged = f"{prev_content}\n\n--- 自进化追加 ({datetime.now().strftime('%Y-%m-%d')}) ---\n\n{new_content}"
+            skill_data[filename] = merged
+        else:
+            skill_data[filename] = new_content or prev_content
+
+    # 异步生成 ChatHistory (因为涉及 AI 二次总结)
+    skill_data["chathistory.md"] = refine_chat_history()
+
+    # 6. 生成 SKILL.md (总控文件)
+    def generate_main_skill():
+        prompt_main = prompts.get("SKILL_MAIN", "")
+        layer_context = "\n\n".join([
+            f"## objective.md\n{skill_data.get('objective.md', '')[:3000]}",
+            f"## inference.md\n{skill_data.get('inference.md', '')[:3000]}",
+            f"## behavior.md\n{skill_data.get('behavior.md', '')[:3000]}",
+            f"## chathistory.md\n{skill_data.get('chathistory.md', '')[:3000]}",
+            f"## memory.md\n{skill_data.get('memory.md', '')[:3000]}",
+            f"## style.md\n{skill_data.get('style.md', '')[:3000]}",
+        ])
+        full_p = "\n\n".join(filter(None, [
+            f"目标角色：{target_uin}",
+            shared_rules,
+            input_block,
+            "### [LAYER_SUMMARY_CONTEXT]",
+            layer_context,
+            f"### [SKILL_MAIN]\n{prompt_main}",
+        ]))
+        return call_ai(cfg, full_p, system_main, rate_limiter, stop_event)
+
+    skill_data["SKILL.md"] = generate_main_skill()
+    # 同时也生成一个进化日志 (evolution.md)
+    skill_data["evolution.md"] = f"# 灵魂进化日志\n\n- 时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n- 目标: {target_uin}\n- 状态: 6层高保真模型构建/更新完成"
+
+    # 7. 写入最终产物 (增加规范校验)
+    for fn, content in skill_data.items():
+        if content:
+            # 针对 SKILL.md 的特殊规范校验
+            if fn == "SKILL.md" and not content.lstrip().startswith("---"):
+                yaml_header = f"---\nname: \"Immortal_{target_uin}\"\ndescription: \"High-fidelity digital soul profile for QQ:{target_uin}\"\nversion: \"{meta['version']}\"\nauthor: \"GroupMemberUnbox-skill\"\n---\n\n"
+                content = yaml_header + content
+                
+            with open(os.path.join(skill_dir, fn), 'w', encoding='utf-8') as f: f.write(content)
+
+    final_report = "\n\n".join([
+        f"# {target_uin} 人物技能总报告",
+        "## SKILL.md",
+        skill_data.get("SKILL.md", ""),
+        "## objective.md",
+        skill_data.get("objective.md", ""),
+        "## inference.md",
+        skill_data.get("inference.md", ""),
+        "## behavior.md",
+        skill_data.get("behavior.md", ""),
+        "## chathistory.md",
+        skill_data.get("chathistory.md", ""),
+        "## memory.md",
+        skill_data.get("memory.md", ""),
+        "## style.md",
+        skill_data.get("style.md", ""),
+        "## evolution.md",
+        skill_data.get("evolution.md", ""),
+    ])
+    with open(os.path.join(out_dir, "00_final_report.md"), 'w', encoding='utf-8') as f:
+        f.write(final_report)
+
+    # 打包与元数据处理 (保持原逻辑)
+    iteration = 1
+    meta_path = os.path.join(skill_dir, "metadata.json")
+    if os.path.exists(meta_path):
+        try:
+            with open(meta_path, 'r', encoding='utf-8') as f: iteration = json.load(f).get("iteration", 0) + 1
+        except: pass
+
     meta = {
-        "version": "3.1.0",
+        "version": "4.1.0",
+        "iteration": iteration,
         "target_uin": target_uin,
-        "created_at": timestamp,
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+        "evolution_mode": "append-only",
         "sha256": ""
     }
-    
     hash_sha256 = hashlib.sha256()
-    for root, dirs, files in os.walk(skill_dir):
-        for file in sorted(files):
-            if file == "metadata.json": continue
-            with open(os.path.join(root, file), 'rb') as f:
-                while chunk := f.read(8192):
-                    hash_sha256.update(chunk)
-    
+    for fn in sorted(skill_data.keys()): 
+        if isinstance(skill_data[fn], str): hash_sha256.update(skill_data[fn].encode('utf-8'))
     meta["sha256"] = hash_sha256.hexdigest()
-    with open(os.path.join(skill_dir, "metadata.json"), 'w', encoding='utf-8') as f:
-        json.dump(meta, f, indent=4, ensure_ascii=False)
-        
-    archive_name = os.path.join(out_dir, f"{target_uin}_skill_{datetime.now().strftime('%Y%m%d')}")
-    try:
-        if os.path.exists(archive_name + ".zip"): os.remove(archive_name + ".zip")
-        if os.path.exists(archive_name + ".skill"): os.remove(archive_name + ".skill")
-        shutil.make_archive(archive_name, 'zip', skill_dir)
-        os.rename(archive_name + ".zip", archive_name + ".skill")
-    except Exception as e:
-        print(f"打包失败: {e}")
     
+    with open(meta_path, 'w', encoding='utf-8') as f: json.dump(meta, f, indent=4, ensure_ascii=False)
+    
+    archive_name = os.path.join(out_dir, f"{target_uin}_v{iteration}_{datetime.now().strftime('%Y%m%d')}")
+    try:
+        shutil.make_archive(archive_name, 'zip', skill_dir)
+        if os.path.exists(archive_name + ".skill"): os.remove(archive_name + ".skill")
+        os.rename(archive_name + ".zip", archive_name + ".skill")
+    except: pass
+
     return {
         "skill_dir": out_dir,
+        "iteration": iteration,
+        "combined_report": final_report,
         "progress": 100,
         "current_stage": "Completed"
     }

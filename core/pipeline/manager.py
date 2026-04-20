@@ -9,6 +9,7 @@ class PipelineManager(QThread):
     finished = pyqtSignal(str)
     error = pyqtSignal(str)
     stage_preview = pyqtSignal(str, str)
+    stage_preview_stream = pyqtSignal(str, str)
     
     def __init__(self, files, target_uin, config, preloaded_state=None):
         super().__init__()
@@ -52,7 +53,8 @@ class PipelineManager(QThread):
             state["stop_event"] = self.stop_event
             state["callbacks"] = {
                 "progress": self.progress.emit,
-                "preview": self.stage_preview.emit
+                "preview": self.stage_preview.emit,
+                "preview_stream": self.stage_preview_stream.emit
             }
             state["is_running"] = True
         else:
@@ -69,75 +71,59 @@ class PipelineManager(QThread):
                 "audit_opinion": None,
                 "reduce_results": {},
                 "combined_report": "",
-                "skill_dir": None,
-                "is_running": True,
+                "word_frequency": {},
+                "message_index_path": "",
+                "message_embedding_path": "",
+                "highlight_candidates_path": "",
+                "local_embedding_error": None,
+                "session_log_dir": "",
+                "start_time": "",
                 "stop_event": self.stop_event,
                 "callbacks": {
                     "progress": self.progress.emit,
-                    "preview": self.stage_preview.emit
+                    "preview": self.stage_preview.emit,
+                    "preview_stream": self.stage_preview_stream.emit
                 },
-                "current_stage": "Init",
-                "progress": 0,
-                "session_log_dir": "",
-                "audit_count": 0,
-                "error": None
+                "is_running": True
             }
-        
+
+        # 运行图
         try:
-            # 使用流式执行以便获取中间状态
-            for event in self.graph.stream(state, config={"recursion_limit": 50}):
-                if self.stop_event.is_set():
-                    self.error.emit("任务已被用户终止。")
-                    self.save_checkpoint(state) # 即使终止也保存最后状态
-                    return
+            for node_name, node_func in self.graph:
+                if not self._is_running:
+                    break
                 
-                # event 格式为 {node_name: {updates}}
-                node_name = next(iter(event))
-                updates = event[node_name]
+                # 特殊逻辑：根据 checkpoint 跳过已完成阶段
+                # 只有当 state 中已有对应结果且不是从外部 preloaded 强制覆盖时才跳过
+                if node_name == "Extract" and state.get("chat_text"):
+                    self.progress.emit(10, "跳过提取阶段，使用缓存数据...")
+                    continue
+                if node_name == "Map" and (state.get("map_results") and len(state.get("map_results")) > 0):
+                    self.progress.emit(65, "跳过分片映射阶段，使用已保存的分片结果...")
+                    continue
+                if node_name == "Merge" and state.get("evidence_base"):
+                    self.progress.emit(75, "跳过合并阶段...")
+                    continue
+
+                # 执行代码
+                self.progress.emit(state.get("progress", 0), f"正在进入阶段: {node_name}...")
+                result = node_func(state)
                 
-                # 重要：将节点更新合并到我们的全量状态中
-                state.update(updates)
+                # 更新状态
+                state.update(result)
                 
-                # 每步持久化
+                # 自动保存检查点
                 self.save_checkpoint(state)
-                
-                # 处理错误
-                if "error" in updates and updates["error"]:
-                    self.error.emit(updates["error"])
-                    return
-                
-                # 发送进度信号
-                if "progress" in updates:
-                    stage_msg = f"{node_name.capitalize()} 阶段完成"
-                    self.progress.emit(updates["progress"], stage_msg)
-                
-                # 发送预览信号
-                if node_name == "extract" and "chat_text" in updates:
-                    text = updates["chat_text"]
-                    preview = text[:3000] + ("..." if len(text) > 3000 else "")
-                    self.stage_preview.emit("raw_preview", preview)
-                
-                elif node_name == "merge" and "evidence_base" in updates:
-                    self.stage_preview.emit("evidence_base", updates["evidence_base"])
-                
-                elif node_name in ["audit", "refine"] and "audit_opinion" in state:
-                    msg = f"### 🛡️ Agent 审计中...\n\n{state['audit_opinion']}"
-                    if node_name == "refine":
-                        msg = f"### ✨ Agent 已优化证据库\n\n{state.get('evidence_base', '')}"
-                    self.stage_preview.emit("evidence_base", msg)
-                
-                elif node_name == "reduce" and "reduce_results" in updates:
-                    for mod, content in updates["reduce_results"].items():
-                        self.stage_preview.emit(f"reduce_{mod}", content)
-            
-            # 结束后从累积的状态中提取最终结果
-            final_res = {
-                "report": state.get("combined_report", ""),
-                "skill_dir": state.get("skill_dir")
-            }
-            self.finished.emit(json.dumps(final_res))
-            
+
+            if self._is_running:
+                self.finished.emit(json.dumps({
+                    "report": state.get("combined_report", "分析中断或无结果"),
+                    "skill_dir": state.get("session_log_dir", "")
+                }))
+            else:
+                self.error.emit("任务已被用户停止")
+
         except Exception as e:
             import traceback
             traceback.print_exc()
-            self.error.emit(f"Pipeline 运行异常: {str(e)}")
+            self.error.emit(f"管道运行错误: {str(e)}")

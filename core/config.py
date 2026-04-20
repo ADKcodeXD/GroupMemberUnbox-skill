@@ -17,6 +17,57 @@ API_PRESETS = {
     "自定义": "",
 }
 
+EMBEDDING_PROVIDER_PRESETS = {
+    "内置 (Builtin)": {
+        "embedding_provider": "builtin",
+        "embedding_api_base": "",
+        "embedding_model": "builtin-hash-384",
+    },
+    "本地 Ollama": {
+        "embedding_provider": "ollama",
+        "embedding_api_base": "http://localhost:11434",
+        "embedding_model": "qwen3-embedding:0.6b",
+    },
+    "OpenAI Compatible": {
+        "embedding_provider": "remote_openai_compatible",
+        "embedding_api_base": "",
+        "embedding_model": "text-embedding-3-small",
+    },
+    "SiliconFlow": {
+        "embedding_provider": "remote_openai_compatible",
+        "embedding_api_base": "https://api.siliconflow.cn/v1",
+        "embedding_model": "BAAI/bge-m3",
+    },
+    "OpenAI": {
+        "embedding_provider": "remote_openai_compatible",
+        "embedding_api_base": "https://api.openai.com/v1",
+        "embedding_model": "text-embedding-3-small",
+    },
+    "自定义": {
+        "embedding_provider": "builtin",
+        "embedding_api_base": "",
+        "embedding_model": "",
+    },
+}
+
+FIDELITY_PROVIDER_PRESETS = {
+    "线上主模型": {
+        "fidelity_provider": "remote",
+        "fidelity_api_base": "",
+        "fidelity_model": "",
+    },
+    "本地 Ollama Qwen 4B": {
+        "fidelity_provider": "ollama",
+        "fidelity_api_base": "http://localhost:11434",
+        "fidelity_model": "qwen3:4b",
+    },
+    "自定义": {
+        "fidelity_provider": "remote",
+        "fidelity_api_base": "",
+        "fidelity_model": "",
+    },
+}
+
 DEFAULT_CONFIG = {
     # ===== 数据处理 =====
     "context_window": 2,           # 上下文截取条数（上下各N条）
@@ -45,9 +96,35 @@ DEFAULT_CONFIG = {
     # ===== Agent 模式 =====
     "agent_mode": False,           # 是否开启 Agent 深度审计模式
 
-    # ===== 费用估算 (默认按 Gemini 1.5 Flash 类似档位) =====
-    "price_per_m_input": 0.95,     # $ / M input tokens
-    "price_per_m_output": 3.15,    # $ / M output tokens
+    # ===== Embedding / 语义检索 =====
+    "embedding_enabled": False,
+    "embedding_preset": "内置 (Builtin)",
+    "embedding_provider": "builtin",
+    "embedding_api_base": "",
+    "embedding_api_key": "",
+    "embedding_model": "builtin-hash-384",
+    "builtin_embedding_dim": 384,
+    "embedding_timeout": 120,
+    "auto_pull_local_models": True,
+    "semantic_retrieval_enabled": True,
+    "semantic_retrieval_top_k": 8,
+    "highlight_candidate_limit": 300,
+    "highlight_output_limit": 50,
+
+    # ===== Fidelity 抽取 =====
+    "fidelity_preset": "本地 Ollama Qwen 4B",
+    "fidelity_provider": "ollama",
+    "fidelity_api_base": "http://localhost:11434",
+    "fidelity_model": "qwen3:4b",
+    "fidelity_timeout": 180,
+    "fidelity_temperature": 0.2,
+    "fidelity_candidate_min": 30,
+    "fidelity_candidate_max": 50,
+    "auto_pull_fidelity_models": True,
+
+    # ===== 费用估算 (默认按 Gemini 3.1 Flash 类似档位) =====
+    "price_per_m_input": 0.5,     # $ / M input tokens
+    "price_per_m_output": 1.5,    # $ / M output tokens
 }
 
 
